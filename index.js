@@ -280,7 +280,17 @@ client.on("guildCreate", async (guild) => {
 
   if (!canal) return;
 
-  canal.send(`# 👋 Olá! Me configure com !setcanal`);
+  canal.send(`# 👋 Olá! Me chamo **Hyandrin Das Promoções**
+
+🔥 Trago as melhores ofertas da Steam pra você!
+
+👉 Me configure usando:
+
+**!setcanal**
+
+📌 Dica: use o comando no canal onde quer receber as promoções 😉
+
+⚠️ Lembre de me dar permissão no canal desejado.`);
 });
 
 // ==========================
