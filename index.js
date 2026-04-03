@@ -19,6 +19,9 @@ const client = new Client({
   ]
 });
 
+const express = require("express");
+const app = express();
+
 // 🔥 CORREÇÃO AQUI
 const TOKEN = process.env.DISCORD_TOKEN;
 
@@ -283,6 +286,15 @@ client.once("ready", () => {
   setInterval(() => {
     console.log("🟢 Bot ativo...");
   }, 30000);
+});
+
+
+app.get("/", (req, res) => {
+  res.send("Bot rodando 🚀");
+});
+
+app.listen(3000, () => {
+  console.log("🌐 Servidor web ativo");
 });
 
 client.login(TOKEN);
