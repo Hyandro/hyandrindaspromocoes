@@ -293,8 +293,10 @@ app.get("/", (req, res) => {
   res.send("Bot rodando 🚀");
 });
 
-app.listen(3000, () => {
-  console.log("🌐 Servidor web ativo");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🌐 Servidor rodando na porta ${PORT}`);
 });
 
 client.login(TOKEN);
