@@ -4,9 +4,8 @@ const {
   Client, 
   GatewayIntentBits, 
   EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
+  ChannelType,
+  PermissionsBitField
 } = require('discord.js');
 
 const axios = require('axios');
@@ -20,7 +19,14 @@ const client = new Client({
   ]
 });
 
-const TOKEN = process.env.TOKEN;
+// 🔥 CORREÇÃO AQUI
+const TOKEN = process.env.DISCORD_TOKEN;
+
+// 🚨 proteção
+if (!TOKEN) {
+  console.log("❌ TOKEN NÃO ENCONTRADO! Verifica o Railway.");
+  process.exit(1);
+}
 
 const ARQUIVO = "deals_enviados.json";
 const CONFIG = "config.json";
@@ -56,8 +62,6 @@ function salvarEnviados(lista) {
 }
 
 // ==========================
-// 🧠 SCORE
-// ==========================
 function calcularScore(jogo, dadosSteam, reviews) {
   const desconto = parseFloat(jogo.savings);
   const preco = parseFloat(jogo.salePrice);
@@ -75,7 +79,6 @@ function calcularScore(jogo, dadosSteam, reviews) {
   return score;
 }
 
-// ==========================
 function definirCategoria(desconto) {
   if (desconto >= 85) return "💀 DESCONTO CRIMINOSO";
   if (desconto >= 75) return "🔥 PROMOÇÃO INSANA";
@@ -83,7 +86,6 @@ function definirCategoria(desconto) {
   return "🔥 PROMOÇÃO BOA";
 }
 
-// ==========================
 async function buscarPromocoes() {
   try {
     const res = await axios.get("https://www.cheapshark.com/api/1.0/deals?storeID=1&upperPrice=50");
@@ -93,7 +95,6 @@ async function buscarPromocoes() {
   }
 }
 
-// ==========================
 async function buscarDadosSteam(appID) {
   try {
     const res = await axios.get(
@@ -114,7 +115,6 @@ async function buscarDadosSteam(appID) {
   }
 }
 
-// ==========================
 async function buscarReviews(appID) {
   try {
     const res = await axios.get(
@@ -132,9 +132,6 @@ async function buscarReviews(appID) {
   }
 }
 
-// ==========================
-// 🌎 TRADUÇÃO
-// ==========================
 async function traduzirTexto(texto) {
   if (!texto) return texto;
 
@@ -148,8 +145,6 @@ async function traduzirTexto(texto) {
 }
 
 // ==========================
-// 🚀 ENVIO
-// ==========================
 async function enviarPromocoes() {
 
   const config = carregarConfig();
@@ -159,8 +154,6 @@ async function enviarPromocoes() {
 
     const canal = await client.channels.fetch(config[guildId]).catch(() => null);
     if (!canal) continue;
-
-    let enviadosAgora = 0;
 
     const jogos = await buscarPromocoes();
     const processados = [];
@@ -207,7 +200,7 @@ async function enviarPromocoes() {
         .setFooter({ text: "HyandrinDasPromoção" });
 
       await canal.send({
-        content: "🚨 SE LIGA NA PROMOÇÃO!||@everyone||",
+        content: "🚨 SE LIGA NA PROMOÇÃO!  ||@everyone||",
         embeds: [embed]
       });
 
@@ -218,8 +211,6 @@ async function enviarPromocoes() {
   salvarEnviados(enviados);
 }
 
-// ==========================
-// 💬 COMANDO
 // ==========================
 client.on("messageCreate", async (msg) => {
 
@@ -234,33 +225,51 @@ client.on("messageCreate", async (msg) => {
 });
 
 // ==========================
-// 👋 MENSAGEM AO ENTRAR
-// ==========================
 client.on("guildCreate", async (guild) => {
 
-  let canal = guild.systemChannel;
+  console.log(`📥 Entrei no servidor: ${guild.name}`);
 
-  // tenta systemChannel primeiro
-  if (!canal) {
-    canal = guild.channels.cache
-      .filter(c => c.type === 0) // canal de texto
-      .find(c => c.permissionsFor(guild.members.me).has("SendMessages"));
+  let canal = null;
+
+  if (
+    guild.systemChannel &&
+    guild.systemChannel.permissionsFor(guild.members.me)?.has([
+      PermissionsBitField.Flags.SendMessages,
+      PermissionsBitField.Flags.ViewChannel
+    ])
+  ) {
+    canal = guild.systemChannel;
   }
 
-  if (!canal) return;
+  if (!canal) {
+    canal = guild.channels.cache
+      .filter(c =>
+        c.type === ChannelType.GuildText &&
+        c.permissionsFor(guild.members.me)?.has([
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.ViewChannel
+        ])
+      )
+      .sort((a, b) => a.position - b.position)
+      .first();
+  }
 
-  canal.send(
-`# 👋 Olá! Me chamo **Hyandrin Das Promoções**  
+  if (canal) {
+    canal.send({
+      content:
+`# 👋 Olá! Me chamo **Hyandrin Das Promoções**
 
-🔥 Trago as melhores ofertas da Steam pra você!  
+🔥 Trago as melhores ofertas da Steam pra você!
 
-👉 Me configure usando:  
+👉 Me configure usando:
 
-**!setcanal**  
+**!setcanal**
 
 📌 Dica: use o comando no canal onde quer receber as promoções 😉
-OBS: Lembre de me dar permissão no canal desejado.`
-  );
+
+⚠️ Lembre de me dar permissão no canal desejado.`
+    }).catch(err => console.log("Erro ao enviar mensagem:", err));
+  }
 });
 
 // ==========================
@@ -269,6 +278,11 @@ client.once("ready", () => {
 
   setInterval(enviarPromocoes, 1000 * 60 * 10);
   enviarPromocoes();
+
+  // 🔥 mantém Railway vivo
+  setInterval(() => {
+    console.log("🟢 Bot ativo...");
+  }, 30000);
 });
 
 client.login(TOKEN);
