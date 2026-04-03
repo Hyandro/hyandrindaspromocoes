@@ -297,7 +297,7 @@ client.on("guildCreate", async (guild) => {
 client.once("ready", () => {
   console.log(`🤖 Online como ${client.user.tag}`);
 
-  setInterval(enviarPromocoes, 1000 * 60 * 10);
+  setInterval(enviarPromocoes, 1000 * 20);
   enviarPromocoes();
 
   setInterval(() => {
