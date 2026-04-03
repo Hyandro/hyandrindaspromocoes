@@ -10,6 +10,9 @@ const {
 
 const axios = require('axios');
 const fs = require('fs');
+const express = require("express");
+
+const app = express();
 
 const client = new Client({
   intents: [
@@ -19,13 +22,8 @@ const client = new Client({
   ]
 });
 
-const express = require("express");
-const app = express();
-
-// 🔥 CORREÇÃO AQUI
 const TOKEN = process.env.DISCORD_TOKEN;
 
-// 🚨 proteção
 if (!TOKEN) {
   console.log("❌ TOKEN NÃO ENCONTRADO! Verifica o Railway.");
   process.exit(1);
@@ -155,7 +153,11 @@ async function enviarPromocoes() {
 
   for (const guildId in config) {
 
-    const canal = await client.channels.fetch(config[guildId]).catch(() => null);
+    const dados = config[guildId];
+
+    if (!dados?.ativo) continue;
+
+    const canal = await client.channels.fetch(dados.canal).catch(() => null);
     if (!canal) continue;
 
     const jogos = await buscarPromocoes();
@@ -215,15 +217,45 @@ async function enviarPromocoes() {
 }
 
 // ==========================
+// 💬 COMANDOS
+// ==========================
 client.on("messageCreate", async (msg) => {
 
   if (msg.content === "!setcanal") {
-
     const config = carregarConfig();
-    config[msg.guild.id] = msg.channel.id;
+
+    config[msg.guild.id] = {
+      canal: msg.channel.id,
+      ativo: false
+    };
+
     salvarConfig(config);
 
-    msg.reply("✅ Canal configurado!");
+    msg.reply("✅ Canal configurado! Agora use !iniciarpromo 🚀");
+  }
+
+  if (msg.content === "!iniciarpromo") {
+    const config = carregarConfig();
+
+    if (!config[msg.guild.id]) {
+      return msg.reply("❌ Use !setcanal primeiro");
+    }
+
+    config[msg.guild.id].ativo = true;
+    salvarConfig(config);
+
+    msg.reply("🚀 Promoções ATIVADAS!");
+  }
+
+  if (msg.content === "!pararpromo") {
+    const config = carregarConfig();
+
+    if (!config[msg.guild.id]) return;
+
+    config[msg.guild.id].ativo = false;
+    salvarConfig(config);
+
+    msg.reply("🛑 Promoções PARADAS!");
   }
 });
 
@@ -232,17 +264,7 @@ client.on("guildCreate", async (guild) => {
 
   console.log(`📥 Entrei no servidor: ${guild.name}`);
 
-  let canal = null;
-
-  if (
-    guild.systemChannel &&
-    guild.systemChannel.permissionsFor(guild.members.me)?.has([
-      PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.ViewChannel
-    ])
-  ) {
-    canal = guild.systemChannel;
-  }
+  let canal = guild.systemChannel;
 
   if (!canal) {
     canal = guild.channels.cache
@@ -253,26 +275,12 @@ client.on("guildCreate", async (guild) => {
           PermissionsBitField.Flags.ViewChannel
         ])
       )
-      .sort((a, b) => a.position - b.position)
       .first();
   }
 
-  if (canal) {
-    canal.send({
-      content:
-`# 👋 Olá! Me chamo **Hyandrin Das Promoções**
+  if (!canal) return;
 
-🔥 Trago as melhores ofertas da Steam pra você!
-
-👉 Me configure usando:
-
-**!setcanal**
-
-📌 Dica: use o comando no canal onde quer receber as promoções 😉
-
-⚠️ Lembre de me dar permissão no canal desejado.`
-    }).catch(err => console.log("Erro ao enviar mensagem:", err));
-  }
+  canal.send(`# 👋 Olá! Me configure com !setcanal`);
 });
 
 // ==========================
@@ -282,13 +290,14 @@ client.once("ready", () => {
   setInterval(enviarPromocoes, 1000 * 60 * 10);
   enviarPromocoes();
 
-  // 🔥 mantém Railway vivo
   setInterval(() => {
     console.log("🟢 Bot ativo...");
   }, 30000);
 });
 
-
+// ==========================
+// 🌐 EXPRESS (RAILWAY)
+// ==========================
 app.get("/", (req, res) => {
   res.send("Bot rodando 🚀");
 });
@@ -299,4 +308,5 @@ app.listen(PORT, () => {
   console.log(`🌐 Servidor rodando na porta ${PORT}`);
 });
 
+// ==========================
 client.login(TOKEN);
