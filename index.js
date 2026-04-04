@@ -164,7 +164,8 @@ async function traduzirTexto(texto) {
 }
 
 // ================= PROMO =================
-async function processarPromocoesGuild(guildId, dados, enviados, origem = "automatico") {
+// FIX: recebe `jogos` como parâmetro em vez de buscar internamente
+async function processarPromocoesGuild(guildId, dados, enviados, origem = "automatico", jogos = []) {
   if (guildsEmProcessamento.has(guildId)) {
     console.log(`⏳ Guild ${guildId} já está em processamento. Origem ignorada: ${origem}`);
     return { enviadas: 0, ignorada: true };
@@ -173,18 +174,20 @@ async function processarPromocoesGuild(guildId, dados, enviados, origem = "autom
   guildsEmProcessamento.add(guildId);
 
   try {
-  const config = carregarConfig();
     const canal = await client.channels.fetch(dados.canal).catch(() => null);
     if (!canal) {
       console.log(`❌ Canal inválido na guild ${guildId}`);
       return { enviadas: 0, ignorada: false };
     }
 
-    const jogos = await buscarPromocoes();
     const processados = [];
     let totalEnviadas = 0;
 
     console.log(`🎯 ${jogos.length} jogos recebidos na guild ${guildId} (${origem})`);
+
+    // FIX: loga quantos jogos foram pulados por já terem sido enviados
+    const jaEnviados = jogos.filter(j => j.steamAppID && enviados.includes(j.steamAppID)).length;
+    console.log(`⏭️ ${jaEnviados} jogos pulados (já enviados anteriormente)`);
 
     // Pré-filtra sem chamar API externa: remove enviados, DLCs e baixo desconto
     const candidatos = jogos
@@ -192,13 +195,11 @@ async function processarPromocoesGuild(guildId, dados, enviados, origem = "autom
       .map(j => ({ ...j, desconto: Math.round(100 - (j.salePrice / j.normalPrice) * 100) }))
       .filter(j => j.desconto >= 30)
       .sort((a, b) => b.desconto - a.desconto)
-      .slice(0, 15); // chama API externa só para os 15 melhores candidatos
+      .slice(0, 15);
 
     console.log(`🔍 ${candidatos.length} candidatos após pré-filtro`);
 
     for (const jogo of candidatos) {
-
-      // Pausa entre chamadas para não ser bloqueado por rate limit da Steam
       await new Promise(r => setTimeout(r, 300));
 
       const dadosSteam = await buscarDadosSteam(jogo.steamAppID);
@@ -206,7 +207,6 @@ async function processarPromocoesGuild(guildId, dados, enviados, origem = "autom
 
       if (reviews.percent < 70) continue;
 
-      // Pula jogos onde a Steam não retornou dados mínimos
       if (!dadosSteam.descricao && !dadosSteam.precoAtual && !dadosSteam.precoAntigo) {
         console.log(`⚠️ Sem dados Steam para ${jogo.title}, pulando`);
         continue;
@@ -219,7 +219,6 @@ async function processarPromocoesGuild(guildId, dados, enviados, origem = "autom
     processados.sort((a, b) => b.score - a.score);
 
     for (const item of processados.slice(0, 5)) {
-
       const { jogo, dadosSteam, desconto } = item;
 
       let descricao = await traduzirTexto(dadosSteam.descricao);
@@ -227,7 +226,6 @@ async function processarPromocoesGuild(guildId, dados, enviados, origem = "autom
 
       const url = `https://store.steampowered.com/app/${jogo.steamAppID}`;
 
-      // Usa preço da Steam se disponível, senão usa dados do CheapShark convertidos
       const precoOriginalUSD = parseFloat(jogo.normalPrice);
       const precoAtualUSD = parseFloat(jogo.salePrice);
       const precoAntigo = dadosSteam.precoAntigo
@@ -272,6 +270,10 @@ async function enviarPromocoes(origem = "automatico", guildIdManual = null) {
   const config = carregarConfig();
   const enviados = carregarEnviados();
 
+  // FIX: busca jogos UMA VEZ SÓ e reutiliza para todos os servidores
+  const jogos = await buscarPromocoes();
+  console.log(`📦 ${jogos.length} jogos buscados da API`);
+
   const guildIds = guildIdManual ? [guildIdManual] : Object.keys(config);
   let totalEnviadas = 0;
 
@@ -280,12 +282,16 @@ async function enviarPromocoes(origem = "automatico", guildIdManual = null) {
     if (!dados) continue;
     if (!guildIdManual && !dados?.ativo) continue;
 
-    const resultado = await processarPromocoesGuild(guildId, dados, enviados, origem);
+    // FIX: passa os jogos já buscados para a função
+    const resultado = await processarPromocoesGuild(guildId, dados, enviados, origem, jogos);
     totalEnviadas += resultado.enviadas;
   }
 
-  if (enviados.length > 200) {
-    enviados.splice(0, enviados.length - 200);
+  // FIX: limite reduzido de 200 para 80 para não esgotar os deals disponíveis
+  if (enviados.length > 80) {
+    const removidos = enviados.length - 80;
+    enviados.splice(0, removidos);
+    console.log(`🗑️ ${removidos} IDs antigos removidos do cache de enviados`);
   }
 
   salvarEnviados(enviados);
@@ -304,8 +310,12 @@ client.on("messageCreate", async (msg) => {
   if (msg.author.bot || !msg.guild) return;
 
   if (msg.content === "!setcanal") {
-    const config = carregarConfig();
+    // FIX: verifica permissão antes de configurar
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+      return msg.reply("❌ Você precisa da permissão de **Gerenciar Canais** para usar este comando.");
+    }
 
+    const config = carregarConfig();
     config[msg.guild.id] = {
       canal: msg.channel.id,
       ativo: false
@@ -316,6 +326,11 @@ client.on("messageCreate", async (msg) => {
   }
 
   if (msg.content === "!iniciarpromo") {
+    // FIX: verifica permissão antes de ativar
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+      return msg.reply("❌ Você precisa da permissão de **Gerenciar Canais** para usar este comando.");
+    }
+
     const config = carregarConfig();
 
     if (!config[msg.guild.id]) {
@@ -326,6 +341,39 @@ client.on("messageCreate", async (msg) => {
     salvarConfig(config);
 
     msg.reply("🚀 Promoções ATIVADAS!");
+  }
+
+  if (msg.content === "!pararpromo") {
+    // FIX: novo comando para desativar sem precisar mexer no config manualmente
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+      return msg.reply("❌ Você precisa da permissão de **Gerenciar Canais** para usar este comando.");
+    }
+
+    const config = carregarConfig();
+
+    if (!config[msg.guild.id]) {
+      return msg.reply("❌ Nenhuma configuração encontrada. Use !setcanal primeiro.");
+    }
+
+    config[msg.guild.id].ativo = false;
+    salvarConfig(config);
+
+    msg.reply("⛔ Promoções DESATIVADAS!");
+  }
+
+  if (msg.content === "!status") {
+    // FIX: novo comando para checar o status do bot no servidor
+    const config = carregarConfig();
+    const dados = config[msg.guild.id];
+
+    if (!dados) {
+      return msg.reply("❌ Bot não configurado neste servidor. Use !setcanal para começar.");
+    }
+
+    const statusAtivo = dados.ativo ? "✅ Ativo" : "⛔ Inativo";
+    const canal = dados.canal ? `<#${dados.canal}>` : "Não definido";
+
+    msg.reply(`📊 **Status do bot:**\n• Estado: ${statusAtivo}\n• Canal: ${canal}\n• Intervalo: ${formatarIntervalo(INTERVALO_PROMOCOES_MS)}`);
   }
 
   if (msg.content === "!novaspromos") {
@@ -358,19 +406,16 @@ client.on("messageCreate", async (msg) => {
 
 // ================= ENTRADA =================
 client.on("guildCreate", async (guild) => {
-
   console.log(`📥 Entrou em: ${guild.name}`);
 
-  // Garante que o membro do bot esteja cacheado antes de checar permissões
   const meuMembro = guild.members.me ?? await guild.members.fetchMe().catch(() => null);
   if (!meuMembro) {
     console.log("❌ Não consegui obter meu próprio membro no guild");
     return;
   }
 
-  const mensagem = `👋 Fala pessoal!\n\nEu sou o **Hyandrin Das Promoções** 🔥\n\n👉 Digite:\n**!setcanal** — para definir o canal de promoções\n**!iniciarpromo** — para ativar o envio automático`;
+  const mensagem = `👋 Fala pessoal!\n\nEu sou o **Hyandrin Das Promoções** 🔥\n\n👉 Digite:\n**!setcanal** — para definir o canal de promoções\n**!iniciarpromo** — para ativar o envio automático\n**!pararpromo** — para pausar o envio\n**!status** — para ver o estado atual do bot\n**!novaspromos** — para buscar promoções agora`;
 
-  // Tenta primeiro o canal de sistema (canal padrão do servidor)
   if (guild.systemChannel) {
     const perm = guild.systemChannel.permissionsFor(meuMembro)?.has([
       PermissionsBitField.Flags.SendMessages,
@@ -385,7 +430,6 @@ client.on("guildCreate", async (guild) => {
     }
   }
 
-  // Fallback: percorre todos os canais de texto procurando um com permissão
   const canais = await guild.channels.fetch().catch(() => null);
   if (!canais) return;
 
