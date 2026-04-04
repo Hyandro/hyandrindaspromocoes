@@ -246,7 +246,7 @@ async function processarPromocoesGuild(guildId, dados, enviados, origem = "autom
           { name: "📉 Desconto", value: `${desconto}% OFF`, inline: true }
         )
         .setImage(`https://cdn.cloudflare.steamstatic.com/steam/apps/${jogo.steamAppID}/header.jpg`)
-        .setFooter({ text: `Steam • ${obterHorarioAtual()}` });
+        .setFooter({ text: "Enviado por - Bot do Hyandro" });
 
       const botoes = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
