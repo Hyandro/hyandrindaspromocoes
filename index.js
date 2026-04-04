@@ -107,12 +107,16 @@ function formatarIntervalo(ms) {
 
 // ================= APIs =================
 async function buscarPromocoes() {
-  try {
-    const res = await axios.get("https://www.cheapshark.com/api/1.0/deals?storeID=1");
-    return res.data;
-  } catch {
-    return [];
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const res = await axios.get("https://www.cheapshark.com/api/1.0/deals?storeID=1");
+      if (res.data?.length > 0) return res.data;
+    } catch {}
+    console.log(`⚠️ Tentativa ${tentativa}/3 falhou. Aguardando...`);
+    await new Promise(r => setTimeout(r, 3000));
   }
+  console.log("❌ Não foi possível buscar promoções após 3 tentativas.");
+  return [];
 }
 
 async function buscarDadosSteam(appID) {
@@ -454,10 +458,13 @@ client.on("guildCreate", async (guild) => {
 });
 
 // ================= READY =================
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`🤖 Online como ${client.user.tag}`);
   setInterval(enviarPromocoes, INTERVALO_PROMOCOES_MS);
-  enviarPromocoes();
+
+  // Aguarda 10 segundos antes do primeiro ciclo para a rede estabilizar
+  console.log("⏱️ Aguardando 10 segundos antes do primeiro ciclo...");
+  setTimeout(() => enviarPromocoes(), 10_000);
 });
 
 app.get("/", (req, res) => {
